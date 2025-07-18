@@ -1,5 +1,5 @@
 import { Controller, Post, Get, Patch, Delete, Param, Body, UseGuards, Req } from '@nestjs/common';
-import { ApiTags, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiResponse, ApiBearerAuth, ApiBody, ApiProperty } from '@nestjs/swagger';
 import { DocumentService } from './document.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { Request } from 'express';
@@ -7,7 +7,10 @@ import { Types } from 'mongoose';
 
 
 class CreateDocumentDto {
+  @ApiProperty({ description: 'Title of the document' })
   title: string;
+
+  @ApiProperty({ description: 'Content of the document', required: false })
   content?: string;
 }
 
