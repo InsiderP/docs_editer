@@ -13,6 +13,7 @@ Instructions:
   <title>Collaborative Editor Demo</title>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.9/dist/yjs.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <style>
     body { font-family: sans-serif; margin: 2em; }
     #editor { width: 100%; height: 200px; border: 1px solid #ccc; padding: 1em; margin-top: 1em; }
@@ -41,26 +42,25 @@ Instructions:
     let ytext = null;
     let docId = '';
     let isApplyingRemote = false;
+    let editorEl = null;
 
     function login() {
       const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
-      fetch('http://localhost:3000/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.access_token) {
-          jwt = data.access_token;
-          document.getElementById('login-status').innerText = 'Login successful!';
-          document.getElementById('login').style.display = 'none';
-          document.getElementById('editor-section').style.display = 'block';
-        } else {
+      axios.post('http://localhost:3000/auth/login', { email, password })
+        .then(res => {
+          if (res.data.access_token) {
+            jwt = res.data.access_token;
+            document.getElementById('login-status').innerText = 'Login successful!';
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('editor-section').style.display = 'block';
+          } else {
+            document.getElementById('login-status').innerText = 'Login failed!';
+          }
+        })
+        .catch(() => {
           document.getElementById('login-status').innerText = 'Login failed!';
-        }
-      });
+        });
     }
 
     function openEditor() {
@@ -71,7 +71,10 @@ Instructions:
       }
       ydoc = new Y.Doc();
       ytext = ydoc.getText('content');
+      editorEl = document.getElementById('editor');
+      editorEl.innerText = '';
       // Connect to backend WebSocket
+      if (socket) socket.disconnect();
       socket = io('/collab', {
         auth: { token: 'Bearer ' + jwt }
       });
@@ -79,24 +82,32 @@ Instructions:
         document.getElementById('editor-status').innerText = 'Connected to backend!';
         socket.emit('joinDoc', { docId });
       });
+      socket.on('connect_error', (err) => {
+        document.getElementById('editor-status').innerText = 'Connection error: ' + err.message;
+      });
       socket.on('docInit', (state) => {
         Y.applyUpdate(ydoc, new Uint8Array(state));
-        document.getElementById('editor').innerText = ytext.toString();
+        editorEl.innerText = ytext.toString();
       });
       socket.on('docUpdate', (update) => {
         isApplyingRemote = true;
         Y.applyUpdate(ydoc, new Uint8Array(update));
-        document.getElementById('editor').innerText = ytext.toString();
+        editorEl.innerText = ytext.toString();
         isApplyingRemote = false;
       });
-      // Local changes
-      document.getElementById('editor').addEventListener('input', () => {
+      // Local changes: use Yjs event, not input event
+      ytext.observe(event => {
         if (isApplyingRemote) return;
-        const newText = document.getElementById('editor').innerText;
-        ytext.delete(0, ytext.length);
-        ytext.insert(0, newText);
+        // Only send incremental update
         const update = Y.encodeStateAsUpdate(ydoc);
         socket.emit('editDoc', { docId, update });
+      });
+      // Editor input handler
+      editorEl.addEventListener('input', () => {
+        if (isApplyingRemote) return;
+        // Update Yjs text (this triggers observer above)
+        ytext.delete(0, ytext.length);
+        ytext.insert(0, editorEl.innerText);
       });
     }
   </script>
